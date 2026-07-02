@@ -1,0 +1,31 @@
+# Virtual enviornments
+.venv/
+venv/
+env/
+ENV/
+
+# Python cache
+__python__/
+*.py[cod]
+*.so
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Enviornment Variables
+.env
+*.env
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
