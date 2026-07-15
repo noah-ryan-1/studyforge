@@ -4,8 +4,8 @@ from datetime import datetime
 
 @dataclass
 class UserProfile:
-	name: str
-	primary_goal: str
+	name: str = ""
+	primary_goal: str = ""
 	weekly_hours_target: int = 20
 	commute_minutes: int = 0
 	id: int = 1
@@ -18,6 +18,7 @@ class Subject:
 	year_taken: str
 	current_grade: float | None = None
 	target_grade: float | None = None
+	final_grade: float | None = None
 	priority: int = 1 
 	notes: str = ""
 	id: int | None = None

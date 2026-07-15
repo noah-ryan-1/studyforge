@@ -37,13 +37,14 @@ def test_profile_upsert(store):
 
 def test_add_and_get_subjects(store):
 	store.add_subject(Subject(name="Advanced Calculus", priority=2, status="active", year_taken="2026"))
-	store.add_subject(Subject(name="Linear Algebra", priority=1, status="active", year_taken="2026"))
+	store.add_subject(Subject(name="Linear Algebra", priority=1, status="active", final_grade=80.1, year_taken="2026"))
 	subjects = store.get_subjects()
 	
 	assert len(subjects) == 2
 	assert subjects[0].name == "Linear Algebra" # subjects should be ordered by priority
 	assert subjects[1].status == "active"
-	assert subjects[1].year_taken == "2026" 
+	assert subjects[1].year_taken == "2026"
+	assert subjects[0].final_grade == 80.1 
 
 
 def test_recurring_block(store):
@@ -101,9 +102,28 @@ def test_conversation_turns_order(store):
 	store.add_turn(ConversationTurn(role="assistant", content="Hello There! :)"))
 	turns = store.get_recent_turns()
 
-	assert turns[0].role == "assistant" # ordered by created_at DESC
-	assert turns[1].role == "user" 
+	assert turns[0].role == "user" # original DESC to return latest items but then flipped to read naturally
+	assert turns[1].role == "assistant" 
 
 def test_empty_db_returns_none_profile(store):
 	assert store.get_profile() is None
 
+def test_get_context_includes_profile(store):
+	store.save_profile(UserProfile(
+		name="Alex", primary_goal="ML engineer",
+		weekly_hours_target=20, commute_minutes=40
+	))
+	ctx = store.get_context_for_llm()
+
+	assert "Alex" in ctx
+	assert "ML engineer" in ctx
+	assert "commute" in ctx.lower()
+
+def test_get_context_includes_fragments(store):
+	store.add_fragment(MemoryFragment(
+		category="social", content="Enjoys hiking on weekends"
+	))
+	ctx = store.get_context_for_llm()
+
+	assert "hiking" in ctx
+	assert "[social]" in ctx

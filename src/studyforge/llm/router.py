@@ -56,7 +56,7 @@ class LLMRouter:
 		kwargs = {
 			"model": self.model,
 			"max_tokens": self.max_tokens,
-			"messages": messages,
+			"messages": full_messages,
 		}
 
 		response  = self._client.chat.completions.create(**kwargs)

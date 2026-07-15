@@ -27,16 +27,33 @@ class MemoryStore:
 
 	# -- User Profile --
 	def save_profile(self, profile: UserProfile):
-		self.conn.execute("""
-			INSERT INTO user_profile (id, name, primary_goal, weekly_hours_target, commute_minutes)
-			VALUES (1, ?, ?, ?, ?)
-			ON CONFLICT(id) DO UPDATE SET
-				name=excluded.name,
-				primary_goal=excluded.primary_goal,
-				weekly_hours_target=excluded.weekly_hours_target,
-				commute_minutes=excluded.commute_minutes,
-				updated_at=datetime('now')
-		""", (profile.name, profile.primary_goal, profile.weekly_hours_target, profile.commute_minutes))
+		existing = self.get_profile()
+		if existing is None:
+			self.conn.execute("""
+				INSERT INTO user_profile (id, name, primary_goal, weekly_hours_target, commute_minutes)
+				VALUES (1, ?, ?, ?, ?)
+				ON CONFLICT(id) DO UPDATE SET
+					name=excluded.name,
+					primary_goal=excluded.primary_goal,
+					weekly_hours_target=excluded.weekly_hours_target,
+					commute_minutes=excluded.commute_minutes,
+					updated_at=datetime('now')
+			""", (profile.name, profile.primary_goal, profile.weekly_hours_target, profile.commute_minutes))
+		else:
+			# only update fields that were actually provided
+			updated_name = profile.name or existing.name
+			updated_goal = profile.primary_goal or existing.primary_goal
+			updated_hours = profile.weekly_hours_target or existing.weekly_hours_target
+			updated_commute = profile.commute_minutes if profile.commute_minutes != 0 else existing.commute_minutes
+			self.conn.execute("""
+				UPDATE user_profile SET
+					name = ?,
+					primary_goal = ?,
+					weekly_hours_target = ?,
+					commute_minutes = ?,
+					updated_at = datetime('now')
+				WHERE id = 1
+			""", (updated_name, updated_goal, updated_hours, updated_commute))
 		self.conn.commit()
 	
 	def get_profile(self) -> UserProfile | None:
@@ -53,19 +70,19 @@ class MemoryStore:
 	# -- Subjects --
 	def add_subject(self, subject: Subject) -> int:
 		cur = self.conn.execute("""
-			INSERT INTO subjects ( name, current_grade, target_grade, priority, notes,
+			INSERT INTO subjects ( name, current_grade, target_grade, final_grade, priority, notes,
 				status, year_taken)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		""", (subject.name, subject.current_grade, subject.target_grade, subject.priority, subject.notes,
-			 subject.status, subject.year_taken))
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		""", (subject.name, subject.current_grade, subject.target_grade, subject.final_grade, subject.priority,
+			 subject.notes ,subject.status, subject.year_taken))
 		self.conn.commit()
 		return cur.lastrowid
 
 	def get_subjects(self) -> list[Subject]:
 		rows = self.conn.execute("SELECT * FROM subjects ORDER BY priority").fetchall()
 		return [Subject(id=r["id"], name=r["name"], current_grade=r['current_grade'], 
-			target_grade=r['target_grade'], priority=r['priority'], notes=r['notes'], 
-			status=r['status'], year_taken=r['year_taken']) for r in rows]
+			target_grade=r['target_grade'], final_grade=r['final_grade'],  priority=r['priority'], 
+			notes=r['notes'], status=r['status'], year_taken=r['year_taken']) for r in rows]
 
 
 	# -- recurring blocks (lectures, tutorials, labs) -- 
@@ -200,10 +217,107 @@ class MemoryStore:
 
 	def get_recent_turns(self, limit: int = 20, context_tag: str = "general") -> list[ConversationTurn]:
 		rows = self.conn.execute("""
-			SELECT * FROM conversation_turns
-			WHERE context_tag=?
-			ORDER BY created_at DESC LIMIT ?
+			SELECT * FROM (
+				SELECT * FROM conversation_turns
+				WHERE context_tag=?
+				ORDER BY created_at DESC LIMIT ?
+			) ORDER BY created_at ASC
 		""", (context_tag, limit)).fetchall()
-		rows = list(reversed(rows))
 		return [ConversationTurn(id=r["id"], role=r["role"], content=r["content"], context_tag=r["context_tag"])
 				for r in rows]
+
+
+	def get_context_for_llm(self) -> str:
+		from datetime import datetime
+
+		profile = self.get_profile()
+	
+		all_subjects = self.get_subjects()
+		active_subjects = [s for s in all_subjects if s.status == "active"]
+		past_subjects = [s for s in all_subjects if s.status == "past"]
+
+		recurring = self.get_recurring_blocks()
+		work = self.get_work_volunteering()
+		upcoming = self.get_one_off_events(
+			from_date=datetime.now().date().isoformat()
+		)
+		experience = self.get_past_experience()
+		fragments = self.get_fragments(limit=40)
+		recent_ratings = self.conn.execute(
+			"""SELECT event_label, rating, mood, notes
+			FROM event_ratings ORDER BY rated_at DESC LIMIT 10"""
+		).fetchall()
+
+		parts = []
+
+		if profile:
+			parts.append(
+				f"Name: {profile.name}\n"
+				f"Goal: {profile.primary_goal}\n"
+				f"Weekly study target: {profile.weekly_hours_target}h\n"
+				f"Commute: {profile.commute_minutes} min each way "
+				f"({round(profile.commute_minutes / 60 * 2, 1)}h a day lost to travel)"
+			)
+
+		if active_subjects:
+			parts.append("Current subjects:\n" + "\n".join(
+				f" - {s.name} | now: {s.current_grade} -> target: {s.target_grade}"
+				f" | priority {s.priority}"
+				+ (f" | note: {s.notes}" if s.notes else "")
+				for s in active_subjects
+			))
+
+		if past_subjects:
+			parts.append("Completed subjects:\n" + "\n".join(
+				f" - {s.name} | final: {s.final_grade} | {s.year_taken}"
+				for s in past_subjects
+			))
+
+		if experience:
+			parts.append("Background and past experience:\n" + "\n".join(
+				f"  [{e.category}] {e.name} ({e.year}) - {e.description}"
+				+ (f"\n Relevance: {e.relevance}" if relevance else "")
+				for e in experience
+			))
+
+		if recurring:
+			parts.append("Fixed weekly timetable:\n" + "\n".join(
+				f" - {b.name} ({b.type}): {b.day_of_week} {b.start_time}-{b.end_time}"
+				+ (f" @ {b.location}" if b.location else "")
+				for b in recurring
+			))
+
+		if work:
+			parts.append("Work and Volunteering:\n" + "\n".join(
+				f" - {w.name} ({w.type}): "
+				+ (f"{w.day_of_week} {w.start_time}-{w.end_time}" if w.day_of_week else "variable schedule")
+				+ (f" ~{w.hours_per_week}h/week" if w.hours_per_week else "")
+				for w in work
+			))
+
+		if upcoming:
+			parts.append("Upcoming one-off events:\n" + "\n".join(
+				f"  - {e.date} {e.start_time or ''}: {e.name} ({e.type})"
+				+ (f" - {e.notes}" if notes else "")
+				for e in upcoming
+			))
+
+		if fragments:
+			by_category: dict[str, list[str]] = {}
+			for f in fragments:
+				by_category.setdefault(f.category, []).append(f.content)
+			frag_lines = []
+			for cat, items in by_category.items():
+				for item in items:
+					frag_lines.append(f" [{cat}] {item}")
+			parts.append("Personal context:\n" + "\n".join(frag_lines))
+
+		if recent_ratings:
+			parts.append("Recent event feedback:\n" + "\n".join(
+				f"  -{r['event_label']}: {r['rating']}/5"
+				+ (f" ({r['mood']})" if r['mood'] else "")
+				+ (f" - {r['notes']}" if r['notes'] else "")
+				for r in recent_ratings
+			))
+
+		return "\n\n".join(parts)   

@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS user_profile (
 	id      INTEGER PRIMARY KEY,
-	name    TEXT NOT NULL,
-	primary_goal TEXT NOT NULL,
+	name    TEXT,
+	primary_goal TEXT,
 	weekly_hours_target INTEGER DEFAULT 20,
 	commute_minutes INTEGER DEFAULT 0,
 	created_at TEXT DEFAULT (datetime('now')),
