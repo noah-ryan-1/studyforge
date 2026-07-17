@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS user_profile (
 	primary_goal TEXT,
 	weekly_hours_target INTEGER DEFAULT 20,
 	commute_minutes INTEGER DEFAULT 0,
+	commute_days_per_week INTEGER DEFAULT 5,
 	created_at TEXT DEFAULT (datetime('now')),
 	updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS subjects (
 	target_grade REAL,
 	final_grade REAL,
 	priority INTEGER DEFAULT 1,
+	weekly_hours_target REAL DEFAULT NULL,
 	year_taken TEXT, 
 	notes  TEXT DEFAULT '',
 	created_at TEXT DEFAULT (datetime('now'))

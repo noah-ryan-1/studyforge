@@ -8,6 +8,7 @@ class UserProfile:
 	primary_goal: str = ""
 	weekly_hours_target: int = 20
 	commute_minutes: int = 0
+	commute_days_per_week: int = 5
 	id: int = 1
 
 
@@ -20,6 +21,7 @@ class Subject:
 	target_grade: float | None = None
 	final_grade: float | None = None
 	priority: int = 1 
+	weekly_hours_target: float | None = None
 	notes: str = ""
 	id: int | None = None
 
@@ -94,4 +96,24 @@ class ConversationTurn:
 	role: str
 	content: str
 	context_tag: str = "general"
+	id: int | None = None
+
+
+@dataclass
+class Summary:
+	type: str
+	content: str
+	period_start: str
+	period_end: str
+	id: int | None = None
+	created_at: str | None = None
+
+
+@dataclass
+class EventRating:
+	event_type: str
+	event_label: str
+	rating: int
+	mood: str = ""
+	notes: str = ""
 	id: int | None = None

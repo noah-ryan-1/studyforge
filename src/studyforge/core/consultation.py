@@ -68,6 +68,7 @@ For EACH subject, collect seperately:
 - Subject name
 - Current grade or mark (as a percentage or letter)
 - Target grade they want to reach
+- How many hours they want to dedicate weekly to this subject?
 - How they feel about it (struggling/comfortable/strong)
 - What type of assesments: assignments, projects, exams, or a mix?
 - Any upcoming assessments with due dates if known
@@ -77,7 +78,7 @@ TOPIC 3 - UNIVERSITY STRUCTURE
 - What year of their degree are they in?
 - What semester is it and roughly when does it end?
 - How many contact hours per week (lectures, tutorials, labs)?
-Get specific times and locations for recurring ones
+Get specific times and locations for recurring ones and how many times they commute.
 
 TOPIC 4 - WORK AND VOLUNTEERING
 - Do they have a job? What type? What days? How many hours a week?
@@ -136,13 +137,15 @@ VALID TABLES AND FIELDS:
 user_profile:
 	name (str), primary_goal (str),
 	weekly_hours_target (int - only save when they tell you explicitly), 
-	commute_minutes (int - one way)
+	commute_minutes (int - one way), 
+	commute_days_per_week (int)
 
 
 subjects: 
 	name (str), status ("active"/"paused"/"past"),
 	current_grade (float|null), target_grade (float|null),
-	priority (int 1=highest), year_taken (str), final_grade (float|null)
+	priority (int 1=highest), year_taken (str), final_grade (float|null),
+	weekly_hours_target (float | null)
 
 
 recurring_blocks:

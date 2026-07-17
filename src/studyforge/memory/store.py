@@ -2,7 +2,8 @@ import sqlite3
 from pathlib import Path
 from studyforge.memory.models import (
 	UserProfile, Subject, StudySession, ConversationTurn, MemoryFragment,
-	PastExperience, OneOffEvent, WorkVolunteering, RecurringBlock
+	PastExperience, OneOffEvent, WorkVolunteering, RecurringBlock,
+	Summary, EventRating
 )
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
@@ -30,30 +31,34 @@ class MemoryStore:
 		existing = self.get_profile()
 		if existing is None:
 			self.conn.execute("""
-				INSERT INTO user_profile (id, name, primary_goal, weekly_hours_target, commute_minutes)
-				VALUES (1, ?, ?, ?, ?)
+				INSERT INTO user_profile (id, name, primary_goal, weekly_hours_target,
+					 commute_minutes, commute_days_per_week)
+				VALUES (1, ?, ?, ?, ?, ?)
 				ON CONFLICT(id) DO UPDATE SET
 					name=excluded.name,
 					primary_goal=excluded.primary_goal,
 					weekly_hours_target=excluded.weekly_hours_target,
 					commute_minutes=excluded.commute_minutes,
+					commute_days_per_week = excluded.commute_days_per_week,
 					updated_at=datetime('now')
-			""", (profile.name, profile.primary_goal, profile.weekly_hours_target, profile.commute_minutes))
+			""", (profile.name, profile.primary_goal, profile.weekly_hours_target, profile.commute_minutes, profile.commute_days_per_week))
 		else:
 			# only update fields that were actually provided
 			updated_name = profile.name or existing.name
 			updated_goal = profile.primary_goal or existing.primary_goal
 			updated_hours = profile.weekly_hours_target or existing.weekly_hours_target
 			updated_commute = profile.commute_minutes if profile.commute_minutes != 0 else existing.commute_minutes
+			updated_days = profile.commute_days_per_week if profile.commute_days_per_week != 5 else existing.commute_days_per_week
 			self.conn.execute("""
 				UPDATE user_profile SET
 					name = ?,
 					primary_goal = ?,
 					weekly_hours_target = ?,
 					commute_minutes = ?,
+					commute_days_per_week = ?,
 					updated_at = datetime('now')
 				WHERE id = 1
-			""", (updated_name, updated_goal, updated_hours, updated_commute))
+			""", (updated_name, updated_goal, updated_hours, updated_commute, updated_days))
 		self.conn.commit()
 	
 	def get_profile(self) -> UserProfile | None:
@@ -63,18 +68,18 @@ class MemoryStore:
 		return UserProfile(
 			id=row["id"], name=row["name"], primary_goal=row["primary_goal"],
 			weekly_hours_target=row["weekly_hours_target"], 
-			commute_minutes=row["commute_minutes"]
+			commute_minutes=row["commute_minutes"], commute_days_per_week=row["commute_days_per_week"]
 		)
 	
 	
 	# -- Subjects --
 	def add_subject(self, subject: Subject) -> int:
 		cur = self.conn.execute("""
-			INSERT INTO subjects ( name, current_grade, target_grade, final_grade, priority, notes,
-				status, year_taken)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			INSERT INTO subjects ( name, current_grade, target_grade, final_grade, priority, 
+				weekly_hours_target, notes, status, year_taken)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 		""", (subject.name, subject.current_grade, subject.target_grade, subject.final_grade, subject.priority,
-			 subject.notes ,subject.status, subject.year_taken))
+			 subject.weekly_hours_target, subject.notes ,subject.status, subject.year_taken))
 		self.conn.commit()
 		return cur.lastrowid
 
@@ -82,7 +87,8 @@ class MemoryStore:
 		rows = self.conn.execute("SELECT * FROM subjects ORDER BY priority").fetchall()
 		return [Subject(id=r["id"], name=r["name"], current_grade=r['current_grade'], 
 			target_grade=r['target_grade'], final_grade=r['final_grade'],  priority=r['priority'], 
-			notes=r['notes'], status=r['status'], year_taken=r['year_taken']) for r in rows]
+			weekly_hours_target=r['weekly_hours_target'], notes=r['notes'], status=r['status'], 
+			year_taken=r['year_taken']) for r in rows]
 
 
 	# -- recurring blocks (lectures, tutorials, labs) -- 
@@ -226,6 +232,50 @@ class MemoryStore:
 		return [ConversationTurn(id=r["id"], role=r["role"], content=r["content"], context_tag=r["context_tag"])
 				for r in rows]
 
+	# -- summaries (weekly, daily) --
+	def save_summary(self, summary: Summary) -> int:
+		cur = self.conn.execute("""
+			INSERT INTO summaries (type, content, period_start, period_end)
+			VALUES (?, ?, ?, ?)
+		""", (summary.type, summary.content, summary.period_start, summary.period_end))
+		self.conn.commit()
+		return cur.lastrowid
+
+	def get_summaries(self, type: str | None = None, limit: int = 10) -> list[Summary]:
+		if type:
+			rows = self.conn.execute("""
+				SELECT * FROM summaries WHERE type = ?
+				ORDER BY created_at DESC LIMIT ?
+			""", (type, limit)).fetchall()
+		else:
+			rows = self.conn.execute("""
+				SELECT * FROM summaries
+				ORDER BY created_at DESC LIMIT ?
+			""", (limit,)).fetchall()
+		return [Summary(
+			id=r["id"], type=r["type"], content=r["content"], period_start=r["period_start"],
+			period_end=r["period_end"], created_at=r["created_at"]
+			) for r in rows]
+
+	# -- ratings --
+	def add_rating(self, rating: EventRating) -> int:
+		cur = self.conn.execute("""
+			INSERT INTO event_ratings
+				(event_type, event_label, rating, mood, notes)
+			VALUES (?, ?, ?, ?, ?)
+		""", (rating.event_type, rating.event_label, rating.rating, rating.mood, rating.notes))
+		self.conn.commit()
+		return cur.lastrowid
+
+	def get_ratings(self, limit: int = 20) -> list[EventRating]:
+		rows = self.conn.execute("""
+			SELECT * FROM event_ratings
+			ORDER BY rated_at DESC LIMIT ?
+		""", (limit,)).fetchall()
+		return [EventRating(
+			id=r["id"], event_type=r["event_type"], event_label=r["event_label"],
+			rating=r["rating"], mood=r["mood"], notes=r["notes"]
+		) for r in rows]
 
 	def get_context_for_llm(self) -> str:
 		from datetime import datetime
@@ -256,13 +306,15 @@ class MemoryStore:
 				f"Goal: {profile.primary_goal}\n"
 				f"Weekly study target: {profile.weekly_hours_target}h\n"
 				f"Commute: {profile.commute_minutes} min each way "
-				f"({round(profile.commute_minutes / 60 * 2, 1)}h a day lost to travel)"
+				f"{profile.commute_days_per_week} day(s)/week = "
+				f"({round(profile.commute_minutes / 60 * 2 * profile.commute_days_per_week, 1)}h a week lost to travel)"
 			)
 
 		if active_subjects:
 			parts.append("Current subjects:\n" + "\n".join(
 				f" - {s.name} | now: {s.current_grade} -> target: {s.target_grade}"
 				f" | priority {s.priority}"
+				+ (f" | study target: {s.weekly_hours_target}h/week" if s.weekly_hours_target else "")
 				+ (f" | note: {s.notes}" if s.notes else "")
 				for s in active_subjects
 			))
