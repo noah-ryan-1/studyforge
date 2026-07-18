@@ -50,6 +50,38 @@ INCORRECT EXAMPLE:
 [advice]. Here's a study plan: [plan]."
 -> THIS IS WRONG. You don't have enough information yet.
 
+PROACTIVE MEMORY EXTRACTION:
+When the user reveals something personal or significant - even in passing - save it as a
+memory_fragment. If you think that it is too personal you can request permission from the user
+to save it. 
+
+Examples of things to save:
+- A subject they failed or struggled with -> past_experience AND memory_fragments category: "observation"
+- A reason they failed (illness, overcommitment, personal circumstances (request if personal e.g. family
+member passing)) -> memory_fragments category "personal" or "constraint"
+- Emotional tone about a subject: (confidence, anxiety, dread) -> memory_fragments category: "observation"
+do not pay too much attention to this only things that are quite obvious
+- Past experience that explains a current situation -> past_experience with description and relevance
+
+EXAMPLE - user says: "I failed Physical Education with a 48 because I got sick
+and missed an assignment, but I think I did well in the exam":
+
+Response: (reply)
+<save>
+{"table": "past_experience", "data": {"category": "subject",
+  "name": "Physical Education", "grade": 48.0,
+  "description": "Failed due to illness causing missed assignment submission, not lack of understanding. Performed well in exam component.",
+  "relevance": "Directly relevant to current Health subject. Foundation knowledge likely intact."}}
+</save>
+<save>
+{"table": "memory_fragments", "data": {"category": "observation",
+  "content": "Previously failed a subject not due to understanding but due to illness and missing a submission deadline. Worth monitoring assignment deadlines carefully."}}
+</save>
+<save>
+{"table": "memory_fragments", "data": {"category": "constraint",
+  "content": "Has experienced health-related disruption to studies in the past. May need buffer time around assessment deadlines."}}
+</save>
+
 ═══════════════════════════════════════════════
 CONSULTATION TOPICS - COVER IN THIS ORDER
 ═══════════════════════════════════════════════
@@ -300,13 +332,16 @@ from studyforge.memory.models import ConversationTurn
 
 
 class ConsultationEngine:
-	def __init__(self, store: MemoryStore, provider: Provider = Provider.DEEPSEEK):
+	def __init__(self, store: MemoryStore, provider: Provider = Provider.DEEPSEEK,
+		debug: bool=False):
 		self.store = store
 		runtime = _build_runtime_context()
 		full_prompt = f"{runtime}\n\n{CONSULTATION_SYSTEM_PROMPT}"
+		self.debug = debug
 		
-		print(f"\n[DEBUG system prompt length]: {len(full_prompt)} chars")
-		print(f"[DEBUG system prompt first 200 chars]:\n{full_prompt[:200]}\n")
+		if self.debug:
+			print(f"\n[DEBUG system prompt length]: {len(full_prompt)} chars")
+			print(f"[DEBUG system prompt first 200 chars]:\n{full_prompt[:200]}\n")
 
 		self.router = LLMRouter(
 			provider=provider,
@@ -344,10 +379,10 @@ class ConsultationEngine:
 		return self.save_router.clean_response(raw_response)
 
 	def _handle_response(self, response: str):
-		print(f"\n[DEBUG raw response]:\n{response}\n")
 		saved = self.save_router.process(response)
-		for item in saved:
-			print(f"  [saved] {item}")
+		if self.debug:
+			for item in saved:
+				print(f"  [saved] {item}")
 		if self.save_router.is_complete(response):
 			self.complete = True
 

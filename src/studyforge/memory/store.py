@@ -74,14 +74,45 @@ class MemoryStore:
 	
 	# -- Subjects --
 	def add_subject(self, subject: Subject) -> int:
-		cur = self.conn.execute("""
-			INSERT INTO subjects ( name, current_grade, target_grade, final_grade, priority, 
-				weekly_hours_target, notes, status, year_taken)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		""", (subject.name, subject.current_grade, subject.target_grade, subject.final_grade, subject.priority,
-			 subject.weekly_hours_target, subject.notes ,subject.status, subject.year_taken))
-		self.conn.commit()
-		return cur.lastrowid
+		existing = self.conn.execute(
+			"SELECT id FROM subjects WHERE name = ? AND status = ?",
+			(subject.name, subject.status)
+		).fetchone()
+
+		if existing:
+			# Update only the fields which are not None
+			fields = []
+			values = []
+			for field, value in [
+				("current_grade", subject.current_grade),
+				("target_grade", subject.target_grade),
+				("final_grade", subject.final_grade),
+				("priority", subject.priority),
+				("weekly_hours_target", subject.weekly_hours_target),
+				("year_taken", subject.year_taken),
+				("notes", subject.notes),
+			]:
+				if value is not None:
+					fields.append(f"{field} = ?")
+					values.append(value)
+
+			if fields:
+				valued.append(existing["id"])
+				self.conn.execute(
+					f"UPDATE subjects SET {', '.join(fields)} WHERE id = ?",
+					values
+				)
+				self.conn.commit()
+			return existing["id"]
+		else:
+			cur = self.conn.execute("""
+				INSERT INTO subjects ( name, current_grade, target_grade, final_grade, priority, 
+					weekly_hours_target, notes, status, year_taken)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			""", (subject.name, subject.current_grade, subject.target_grade, subject.final_grade, subject.priority,
+			 	subject.weekly_hours_target, subject.notes ,subject.status, subject.year_taken))
+			self.conn.commit()
+			return cur.lastrowid
 
 	def get_subjects(self) -> list[Subject]:
 		rows = self.conn.execute("SELECT * FROM subjects ORDER BY priority").fetchall()
@@ -93,6 +124,14 @@ class MemoryStore:
 
 	# -- recurring blocks (lectures, tutorials, labs) -- 
 	def add_recurring_block(self, block: RecurringBlock) -> int:
+		existing = self.conn.execute(
+			"SELECT id FROM recurring_blocks WHERE name = ? AND day_of_week = ? AND start_time = ?",
+			(block.name, block.day_of_week, block.start_time)
+		).fetchone()
+
+		if existing:
+			return existing["id"] # already exists -> skip
+		 
 		curr = self.conn.execute("""
 			INSERT INTO recurring_blocks(name, type, day_of_week, start_time, end_time, location, notes)
 			VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -112,6 +151,14 @@ class MemoryStore:
 
 	# -- work and volunteering -- 
 	def add_work_volunteering(self, entry: WorkVolunteering) -> int:
+		existing = self.conn.execute(
+			"SELECT id FROM work_volunteering WHERE name = ? AND type = ?",
+			(entry.name, entry.type)
+		).fetchone()
+
+		if existing:
+			return existing["id"]
+ 
 		cur = self.conn.execute("""
 			INSERT INTO work_volunteering
 			(name, type, day_of_week, start_time, end_time, is_recurring, hours_per_week, notes)
@@ -328,7 +375,7 @@ class MemoryStore:
 		if experience:
 			parts.append("Background and past experience:\n" + "\n".join(
 				f"  [{e.category}] {e.name} ({e.year}) - {e.description}"
-				+ (f"\n Relevance: {e.relevance}" if relevance else "")
+				+ (f"\n Relevance: {e.relevance}" if e.relevance else "")
 				for e in experience
 			))
 
