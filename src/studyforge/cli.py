@@ -367,6 +367,76 @@ def check(
 	console.print(f"\n{result.get('summary')}")
 	store.close()
 
+@app.command()
+def sync(
+	days: int = typer.Option(30, "--days", "-d", 
+		help="Days ahead to sync one off events"),
+):
+	"""Sync your google calendar events into StudyForge Memory."""
+	from studyforge.integrations.calendar_sync import CalendarSync
+
+	store = get_store()
+	require_profile(store)
+
+	with console.status("Connection to Google Calendar...", spinner="dots"):
+		try:
+			syncer = CalendarSync(store)
+		except FileNotFoundError as e:
+			console.print(f"[red]{e}[/red]")
+			raise typer.Exit(1)
+
+	with console.status("Syncing this week's events...", spinner="dots"):
+		week_counts = syncer.sync_week()
+
+	with console.status(f"Syncing upcoming events ({days} days)...",
+		spinner="dots"):
+		upcoming_counts = syncer.sync_upcoming(days=days)
+
+	console.print(f"[green]✅ Synced {week_counts['recurring']} "
+		f"recurring blocks this week[/green]")
+	console.print(f"[green]✅ Synced {week_counts['one_off'] + upcoming_counts['one_off']} "
+		f"one-off events[/green]")
+	console.print(f"[dim]Run [bold]studyforge status[/bold] to see your updated schedule![/dim]")
+
+	store.close()
+
+@app.command()
+def calendar():
+	"""Show this week's events from Google Calendar."""
+	from studyforge.integrations.calendar_client import CalendarClient
+	from rich.table import Table
+
+	store = get_store()
+	require_profile(store)
+
+	with console.status("Fetching calendar...", spinner="dots"):
+		try:
+			client = CalendarClient()
+			events = client.get_events_this_week()
+		except FileNotFoundError as e:
+			console.print(f"[red]{e}[/red]")
+			raise typer.Exit(1)
+
+	if not events:
+		console.print("[dim]No events this week.[/dim]")
+		store.close()
+		return
+
+	table = Table(title="This week's calendar", show_header=True, header_style="bold")
+	table.add_column("Day", style="cyan", width=10)
+	table.add_column("Time", width=14)
+	table.add_column("Event", style="white")
+	table.add_column("Type", width=10)
+
+	for e in events:
+		day = e.start.strftime("%a %d %b")
+		time = f"{e.start.strftime('%H:%M')}-{e.end.strftime('%H:%M')}"
+		event_type = "recurring" if e.is_recurring else "one-off"
+		table.add_row(day, time, e.title, event_type)
+
+	console.print(table)
+	store.close()
+
 
 if __name__ == "__main__":
 	app() 	
